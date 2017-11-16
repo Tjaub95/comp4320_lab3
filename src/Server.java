@@ -2,7 +2,7 @@ import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.DatagramPacket;
 
-public class UDPServer {
+public class Server {
     private static final int SERVER_GID = 12;
     private static final int MAX_BUFF_LEN = 1000;
 
@@ -25,7 +25,7 @@ public class UDPServer {
             System.out.println("Packet received...");
 
             byte[] response = receivePacket.getData();
-            int respLen = receivePacket.getLength();
+            int respLen = receivePacket.getData().length;
 
 
         }
