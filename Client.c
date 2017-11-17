@@ -23,10 +23,35 @@
 struct transmitted_packet {
     unsigned int magic_num;
     unsigned short port_num;
-    unsigned char GID_client;
+    unsigned char gid_client;
 } __attribute__((__packed__));
 
 typedef struct transmitted_packet tx_packet;
+
+struct waiting_client {
+    unsigned int magic_num;
+    unsigned char gid_server;
+    unsigned short port_num;
+} __attribute__((__packed__));
+
+typedef struct waiting_client wc_packet;
+
+struct waiting_client_found {
+    unsigned int magic_num;
+    unsigned int ip_addr_waiting_client;
+    unsigned short port_num_waiting_client;
+    unsigned char gid_server;
+} __attribute__((__packed__));
+
+typedef struct waiting_client_found wcf_packet;
+
+struct error_received {
+    unsigned int magic_num;
+    unsigned char gid_server;
+    unsigned int error_code;
+} __attribute__((__packed__));
+
+typedef struct error_received er_packet;
 
 void sigchld_handler(int s) {
     while (waitpid(-1, NULL, WNOHANG) > 0);
@@ -79,7 +104,7 @@ int main(int argc, char *argv[]) {
 
     // Get the Packet Ready to Send
     packet_out.magic_num = (int) htonl(MAGIC_NUMBER);
-    packet_out.GID_client = GROUP_ID;
+    packet_out.gid_client = GROUP_ID;
     packet_out.port_num = htons((unsigned short) strtoul(my_port, NULL, 0));
 
     memset(&hints, 0, sizeof hints);    // put 0's in all the mem space for hints (clearing hints)
@@ -113,4 +138,9 @@ int main(int argc, char *argv[]) {
         perror("Error: sendto");
         exit(1);
     }
+
+    addr_len = sizeof their_addr;
+
+    // Create the structs needed for receiving a packet
+
 }
