@@ -56,13 +56,13 @@ public class Server {
 
             // Check for error in packet length
             if (respLen != 7) {
-                bytesToSend = setErrorBytes(2);
+                bytesToSend = setErrorBytes((short) 2);
                 System.out.println("Invalid packet length");
                 isError = true;
             }
             // Check for bad magic number
             else if (received_magic_number != MAGIC_NUMBER) {
-                bytesToSend = setErrorBytes(1);
+                bytesToSend = setErrorBytes((short) 1);
                 System.out.println("Invalid magic number");
                 isError = true;
             } else {
@@ -70,7 +70,7 @@ public class Server {
                 byte received_gid = response[6];
                 // Check for bad port number
                 if (received_port < (received_gid * 5) + 10010 || received_port > (received_gid * 5) + 4 + 10010) {
-                    bytesToSend = setErrorBytes(4);
+                    bytesToSend = setErrorBytes((short) 4);
                     System.out.println("Port number out of range");
                     isError = true;
                 }
@@ -117,12 +117,12 @@ public class Server {
         }
     }
 
-    private static byte[] setErrorBytes(int errorCode) {
-        byte[] byteToSend = new byte[9];
+    private static byte[] setErrorBytes(short errorCode) {
+        byte[] byteToSend = new byte[7];
         // Magic Number in Network Order
         System.arraycopy(intToByte(MAGIC_NUMBER), 0, byteToSend, 0, 4);
         byteToSend[4] = (byte) SERVER_GID;
-        System.arraycopy(intToByte(errorCode), 0, byteToSend, 5, 9);
+        System.arraycopy(shortToByte(errorCode), 0, byteToSend, 5, 7);
         return byteToSend;
     }
 
