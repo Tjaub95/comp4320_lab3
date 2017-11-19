@@ -18,6 +18,7 @@
 #define MAX_MESSAGE_LEN 1000
 #define GROUP_ID 12
 #define MAGIC_NUMBER 0x4A6F7921
+#define BACKLOG 10
 
 // Struct that will be used to send data to the Server
 struct transmitted_packet {
@@ -38,7 +39,7 @@ typedef struct waiting_client wc_packet;
 
 struct waiting_client_found {
     unsigned int magic_num;
-    unsigned int ip_addr_waiting_client;
+    unsigned char ip_addr_waiting_client[4];
     unsigned short port_num_waiting_client;
     unsigned char gid_server;
 } __attribute__((__packed__));
@@ -71,6 +72,8 @@ unsigned int make_int(unsigned char a, unsigned char b,
 *
 */
 unsigned short make_short(unsigned char a, unsigned char b);
+
+int tcp_server(wc_packet server_info);
 
 typedef struct incoming_unverified_packet iu_packet;
 
@@ -200,12 +203,43 @@ int main(int argc, char *argv[]) {
     else if (numbytes_rx == 7) {
         printf("Received response from server...\n");
         // Create a tcp server that waits
+        wc_packet wait_packet;
+
+        wait_packet.magic_num = inc_packet.should_be_magic_number;
+        wait_packet.gid_server = inc_packet.extra_char[0];
+        wait_packet.port_num = make_short(inc_packet.extra_char[1], inc_packet.extra_char[2]);
+
+        wait_packet.magic_num = (unsigned int) htonl(wait_packet.magic_num);
+
+        printf("Received Magic Number is: %X\n", wait_packet.magic_num);
+        printf("Received Server GID is: %d\n", wait_packet.gid_server);
+        printf("Received Port Number is: %d\n", wait_packet.port_num);
+
+        tcp_server(wait_packet);
     }
         // Found waiting client case
     else if (numbytes_rx == 11) {
         printf("Received response from server...\n");
         // Create a tcp client
         // Start chat session with server
+        wcf_packet wait_found_packet;
+
+        wait_found_packet.magic_num = inc_packet.should_be_magic_number;
+        wait_found_packet.ip_addr_waiting_client[0] = inc_packet.extra_char[0];
+        wait_found_packet.ip_addr_waiting_client[1] = inc_packet.extra_char[1];
+        wait_found_packet.ip_addr_waiting_client[2] = inc_packet.extra_char[2];
+        wait_found_packet.ip_addr_waiting_client[3] = inc_packet.extra_char[3];
+        wait_found_packet.port_num_waiting_client = make_short(inc_packet.extra_char[4], inc_packet.extra_char[5]);
+        wait_found_packet.gid_server = inc_packet.extra_char[6];
+
+        wait_found_packet.magic_num = (unsigned int) htonl(wait_found_packet.magic_num);
+
+        printf("Received Magic Number is: %X\n", wait_found_packet.magic_num);
+        printf("Received Server GID is: %d\n", wait_found_packet.gid_server);
+        printf("Received Port Number is: %d\n", wait_found_packet.port_num_waiting_client);
+        printf("Received IP address is: %x.%x.%x.%x\n", wait_found_packet.ip_addr_waiting_client[0],
+               wait_found_packet.ip_addr_waiting_client[1], wait_found_packet.ip_addr_waiting_client[2],
+               wait_found_packet.ip_addr_waiting_client[3]);
     }
 
     freeaddrinfo(servinfo);
@@ -244,4 +278,87 @@ unsigned short make_short(unsigned char a, unsigned char b) {
     val <<= 8;
     val |= b;
     return val;
+}
+
+int tcp_server(wc_packet server_info) {
+
+    int sockfd, new_fd;  // listen on sock_fd, new connection on new_fd
+    struct addrinfo hints_tcp, *servinfo_tcp, *p;
+    struct sockaddr_storage their_addr; // connector's address information
+    socklen_t sin_size;
+    struct sigaction sa;
+    int yes = 1;
+    char s[INET6_ADDRSTRLEN];
+    int rv;
+
+    char port_num[5] = {0};      // The port we are willing to play on
+
+    // Converts the short back to a char*
+    sprintf(port_num, "%d", ntohs(server_info.port_num));
+
+    memset(&hints_tcp, 0, sizeof hints_tcp);
+    hints_tcp.ai_family = AF_UNSPEC;
+    hints_tcp.ai_socktype = SOCK_STREAM;
+    hints_tcp.ai_flags = AI_PASSIVE; // use my IP
+
+    if ((rv = getaddrinfo(NULL, port_num, &hints_tcp, &servinfo_tcp)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        return 1;
+    }
+
+    // loop through all the results and bind to the first we can
+    for (p = servinfo_tcp; p != NULL; p = p->ai_next) {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype,
+                             p->ai_protocol)) == -1) {
+            perror("server: socket");
+            continue;
+        }
+
+        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes,
+                       sizeof(int)) == -1) {
+            perror("setsockopt");
+            exit(1);
+        }
+
+        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+            close(sockfd);
+            perror("server: bind");
+            continue;
+        }
+
+        break;
+    }
+
+    if (p == NULL) {
+        fprintf(stderr, "server: failed to bind\n");
+        return 2;
+    }
+
+    freeaddrinfo(servinfo_tcp); // all done with this structure
+
+    if (listen(sockfd, BACKLOG) == -1) {
+        perror("listen");
+        exit(1);
+    }
+
+    sa.sa_handler = sigchld_handler; // reap all dead processes
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+        perror("sigaction");
+        exit(1);
+    }
+
+    sin_size = sizeof their_addr;
+    new_fd = accept(sockfd, (struct sockaddr *) &their_addr, &sin_size);
+    if (new_fd == -1) {
+        perror("accept");
+        //	continue;
+    }
+
+    inet_ntop(their_addr.ss_family,
+              get_in_addr((struct sockaddr *) &their_addr),
+              s, sizeof s);
+
+    return 0;
 }
