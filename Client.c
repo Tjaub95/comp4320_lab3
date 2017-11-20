@@ -54,11 +54,19 @@ struct error_received {
 
 typedef struct error_received er_packet;
 
-// Struct that will be used to recieve unverified incoming packets.
+// Struct that will be used to receive unverified incoming packets.
 struct incoming_unverified_packet {
     unsigned int should_be_magic_number;
     unsigned char extra_char[7];
 } __attribute__((__packed__));
+
+typedef struct incoming_unverified_packet iu_packet;
+
+struct client_message {
+    const char *client_message;
+} __attribute__((__packed__));
+
+typedef struct client_message cm_packet;
 
 /*
 * This function combines four bytes to get an int.
@@ -74,8 +82,6 @@ unsigned int make_int(unsigned char a, unsigned char b,
 unsigned short make_short(unsigned char a, unsigned char b);
 
 int tcp_server(wc_packet server_info);
-
-typedef struct incoming_unverified_packet iu_packet;
 
 void sigchld_handler(int s) {
     while (waitpid(-1, NULL, WNOHANG) > 0);
@@ -201,7 +207,7 @@ int main(int argc, char *argv[]) {
     }
         // Waiting case
     else if (numbytes_rx == 7) {
-        printf("Received response from server...\n");
+        printf("Received response from server...\n\n");
         // Create a tcp server that waits
         wc_packet wait_packet;
 
@@ -213,7 +219,9 @@ int main(int argc, char *argv[]) {
 
         printf("Received Magic Number is: %X\n", wait_packet.magic_num);
         printf("Received Server GID is: %d\n", wait_packet.gid_server);
-        printf("Received Port Number is: %d\n", wait_packet.port_num);
+        printf("Received Port Number is: %d\n\n", wait_packet.port_num);
+
+        printf("Waiting for partner to connect\n\n");
 
         tcp_server(wait_packet);
     }
@@ -281,7 +289,6 @@ unsigned short make_short(unsigned char a, unsigned char b) {
 }
 
 int tcp_server(wc_packet server_info) {
-
     int sockfd, new_fd;  // listen on sock_fd, new connection on new_fd
     struct addrinfo hints_tcp, *servinfo_tcp, *p;
     struct sockaddr_storage their_addr; // connector's address information
@@ -290,6 +297,7 @@ int tcp_server(wc_packet server_info) {
     int yes = 1;
     char s[INET6_ADDRSTRLEN];
     int rv;
+
 
     char port_num[5] = {0};      // The port we are willing to play on
 
@@ -359,6 +367,19 @@ int tcp_server(wc_packet server_info) {
     inet_ntop(their_addr.ss_family,
               get_in_addr((struct sockaddr *) &their_addr),
               s, sizeof s);
+
+    cm_packet client_mess;
+
+    char bye_bye_birdie[15] = "Bye Bye Birdie";
+
+    do {
+        if ((recv(new_fd, (char *) &client_mess, sizeof(client_mess), 0)) == -1) {
+            perror("recv_error");
+            exit(1);
+        }
+        printf("Connection received!\n");
+        printf("Client message is %s\n", client_mess.client_message);
+    } while (strcmp(client_mess.client_message, bye_bye_birdie) != 0);
 
     return 0;
 }
