@@ -39,7 +39,7 @@ typedef struct waiting_client wc_packet;
 
 struct waiting_client_found {
     unsigned int magic_num;
-    unsigned char ip_addr_waiting_client[4];
+    unsigned int ip_addr_waiting_client;
     unsigned short port_num_waiting_client;
     unsigned char gid_server;
 } __attribute__((__packed__));
@@ -82,6 +82,8 @@ unsigned int make_int(unsigned char a, unsigned char b,
 unsigned short make_short(unsigned char a, unsigned char b);
 
 int tcp_server(wc_packet server_info);
+
+int tcp_client(wcf_packet server_info_in);
 
 void sigchld_handler(int s) {
     while (waitpid(-1, NULL, WNOHANG) > 0);
@@ -233,10 +235,8 @@ int main(int argc, char *argv[]) {
         wcf_packet wait_found_packet;
 
         wait_found_packet.magic_num = inc_packet.should_be_magic_number;
-        wait_found_packet.ip_addr_waiting_client[0] = inc_packet.extra_char[0];
-        wait_found_packet.ip_addr_waiting_client[1] = inc_packet.extra_char[1];
-        wait_found_packet.ip_addr_waiting_client[2] = inc_packet.extra_char[2];
-        wait_found_packet.ip_addr_waiting_client[3] = inc_packet.extra_char[3];
+        wait_found_packet.ip_addr_waiting_client = make_int(inc_packet.extra_char[0], inc_packet.extra_char[1],
+                                                            inc_packet.extra_char[2], inc_packet.extra_char[3]);
         wait_found_packet.port_num_waiting_client = make_short(inc_packet.extra_char[4], inc_packet.extra_char[5]);
         wait_found_packet.gid_server = inc_packet.extra_char[6];
 
@@ -245,9 +245,13 @@ int main(int argc, char *argv[]) {
         printf("Received Magic Number is: %X\n", wait_found_packet.magic_num);
         printf("Received Server GID is: %d\n", wait_found_packet.gid_server);
         printf("Received Port Number is: %d\n", wait_found_packet.port_num_waiting_client);
-        printf("Received IP address is: %x.%x.%x.%x\n", wait_found_packet.ip_addr_waiting_client[0],
-               wait_found_packet.ip_addr_waiting_client[1], wait_found_packet.ip_addr_waiting_client[2],
-               wait_found_packet.ip_addr_waiting_client[3]);
+        printf("Received IP address is: %d.%d.%d.%d\n", (int) (their_addr.sin_addr.s_addr & 0xFF),
+               (int) ((their_addr.sin_addr.s_addr & 0xFF00) >> 8),
+               (int) ((their_addr.sin_addr.s_addr & 0xFF0000) >> 16),
+               (int) ((their_addr.sin_addr.s_addr & 0xFF000000) >> 24));
+
+
+        tcp_client(wait_found_packet);
     }
 
     freeaddrinfo(servinfo);
@@ -382,4 +386,63 @@ int tcp_server(wc_packet server_info) {
     } while (strcmp(client_mess.client_message, bye_bye_birdie) != 0);
 
     return 0;
+}
+
+int tcp_client(wcf_packet server_info_in) {
+    int sockfd, numbytes;
+    char buf[MAX_MESSAGE_LEN];
+    struct addrinfo hints, *servinfo, *p;
+    int status;
+    char s[INET6_ADDRSTRLEN];
+
+    char *hostname;
+    char port[5] = {0};      // The port we are willing to play on
+
+    // Converts the short back to a char*
+    sprintf(port, "%d", ntohs(server_info_in.port_num_waiting_client));
+
+    // Converts the hex IP address into a char* using dotted notation
+    struct in_addr addr;
+    addr.s_addr = htonl(server_info_in.ip_addr_waiting_client);
+    hostname = inet_ntoa(addr);
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if ((status = getaddrinfo(hostname, port, &hints, &servinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+        return 1;
+    }
+
+    // Loop through all the results and connect to the first we can
+    for (p = servinfo; p != NULL; p = p->ai_next) {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+            perror("Socket error");
+            continue;
+        }
+
+        if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+            close(sockfd);
+            perror("Connect error");
+            continue;
+        }
+
+        break;
+    }
+
+    if (p == NULL) {
+        fprintf(stderr, "Failed to connect!\n");
+        return 2;
+    }
+
+    freeaddrinfo(servinfo);    // All done with this structure
+
+    cm_packet client_mess;
+
+    client_mess.client_message = "Hello World!\0";
+
+    if (send(sockfd, (char *) &client_mess, sizeof(client_mess), 0) == -1) {
+        perror("Send Error");
+    }
 }
