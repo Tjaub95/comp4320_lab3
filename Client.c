@@ -63,7 +63,7 @@ struct incoming_unverified_packet {
 typedef struct incoming_unverified_packet iu_packet;
 
 struct client_message {
-    const char *client_message;
+    char client_message[MAX_MESSAGE_LEN];
 } __attribute__((__packed__));
 
 typedef struct client_message cm_packet;
@@ -374,7 +374,7 @@ int tcp_server(wc_packet server_info) {
 
     cm_packet client_mess;
 
-    char bye_bye_birdie[15] = "Bye Bye Birdie";
+    char bye_bye_birdie[16] = "Bye Bye Birdie\n";
 
     do {
         if ((recv(new_fd, (char *) &client_mess, sizeof(client_mess), 0)) == -1) {
@@ -382,18 +382,18 @@ int tcp_server(wc_packet server_info) {
             exit(1);
         }
         printf("Connection received!\n");
-        printf("Client message is %s\n", client_mess.client_message);
+        printf("Client sent message:\n%s\n", client_mess.client_message);
     } while (strcmp(client_mess.client_message, bye_bye_birdie) != 0);
+
+    printf("Thank you for using the Group 12 chat client\n");
 
     return 0;
 }
 
 int tcp_client(wcf_packet server_info_in) {
-    int sockfd, numbytes;
-    char buf[MAX_MESSAGE_LEN];
+    int sockfd;
     struct addrinfo hints, *servinfo, *p;
     int status;
-    char s[INET6_ADDRSTRLEN];
 
     char *hostname;
     char port[5] = {0};      // The port we are willing to play on
@@ -438,11 +438,19 @@ int tcp_client(wcf_packet server_info_in) {
 
     freeaddrinfo(servinfo);    // All done with this structure
 
+    char bye_bye_birdie[16] = "Bye Bye Birdie\n";
+
     cm_packet client_mess;
 
-    client_mess.client_message = "Hello World!\0";
+    do {
+        printf("Enter a message to send: ");
 
-    if (send(sockfd, (char *) &client_mess, sizeof(client_mess), 0) == -1) {
-        perror("Send Error");
-    }
+        fgets(client_mess.client_message, MAX_MESSAGE_LEN - 1, stdin);
+
+        if (send(sockfd, (char *) &client_mess, sizeof(client_mess), 0) == -1) {
+            perror("Send Error");
+        }
+    } while (strcmp(client_mess.client_message, bye_bye_birdie) != 0);
+
+    printf("Thank you for using the Group 12 chat client\n");
 }
